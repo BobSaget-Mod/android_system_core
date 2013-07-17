@@ -64,6 +64,8 @@
 #define AID_SDCARD_R      1028  /* external storage read access */
 #define AID_AUDIT         1031  /* audit daemon */
 
+#define AID_THEMEMAN      1300  /* theme manager */
+
 #define AID_SHELL         2000  /* adb and debug shell user */
 #define AID_CACHE         2001  /* cache access */
 #define AID_DIAG          2002  /* access to diagnostic resources */
@@ -140,6 +142,7 @@ static const struct android_id_info android_ids[] = {
     { "net_bw_acct", AID_NET_BW_ACCT, },
     { "misc",      AID_MISC, },
     { "nobody",    AID_NOBODY, },
+    { "theme_man", AID_THEMEMAN },
     { "audit",      AID_AUDIT, },
 };
 
