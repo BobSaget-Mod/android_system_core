@@ -18,6 +18,7 @@
 #define _LARGEFILE64_SOURCE 1
 
 #include <fcntl.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -44,15 +45,6 @@
 #define ftruncate64 ftruncate
 #define mmap64 mmap
 #define off64_t off_t
-#endif
-
-#ifdef __BIONIC__
-extern void*  __mmap2(void *, size_t, int, int, int, off_t);
-static inline void *mmap64(void *addr, size_t length, int prot, int flags,
-        int fd, off64_t offset)
-{
-    return __mmap2(addr, length, prot, flags, fd, offset >> 12);
-}
 #endif
 
 #define min(a, b) \
@@ -351,7 +343,7 @@ static int write_sparse_skip_chunk(struct output_file *out, int64_t skip_len)
 	int ret, chunk;
 
 	if (skip_len % out->block_size) {
-		error("don't care size %llu is not a multiple of the block size %u",
+		error("don't care size %"PRIi64" is not a multiple of the block size %u",
 				skip_len, out->block_size);
 		return -1;
 	}
@@ -731,10 +723,12 @@ int write_fd_chunk(struct output_file *out, unsigned int len,
 	}
 	pos = lseek64(fd, offset, SEEK_SET);
 	if (pos < 0) {
+                free(data);
 		return -errno;
 	}
 	ret = read_all(fd, data, len);
 	if (ret < 0) {
+                free(data);
 		return ret;
 	}
 	ptr = data;

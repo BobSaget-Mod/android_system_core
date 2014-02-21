@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2008-2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@
  * passed on to the underlying (fake) log device.  When not in the
  * simulator, messages are printed to stderr.
  */
+#include "fake_log_device.h"
+
 #include <log/logd.h>
 
 #include <stdlib.h>
@@ -320,11 +322,11 @@ static const char* getPriorityString(int priority)
  * Make up something to replace it.
  */
 static ssize_t fake_writev(int fd, const struct iovec *iov, int iovcnt) {
-    int result = 0;
-    struct iovec* end = iov + iovcnt;
+    ssize_t result = 0;
+    const struct iovec* end = iov + iovcnt;
     for (; iov < end; iov++) {
-        int w = write(fd, iov->iov_base, iov->iov_len);
-        if (w != iov->iov_len) {
+        ssize_t w = write(fd, iov->iov_base, iov->iov_len);
+        if (w != (ssize_t) iov->iov_len) {
             if (w < 0)
                 return w;
             return result + w;

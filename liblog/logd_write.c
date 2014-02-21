@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007 The Android Open Source Project
+ * Copyright (C) 2007-2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,10 +31,16 @@
 #include <log/logd.h>
 #include <log/log.h>
 
-#define LOG_BUF_SIZE	1024
+#define LOGGER_LOG_MAIN		"log/main"
+#define LOGGER_LOG_RADIO	"log/radio"
+#define LOGGER_LOG_EVENTS	"log/events"
+#define LOGGER_LOG_SYSTEM	"log/system"
+
+#define LOG_BUF_SIZE 1024
 
 #if FAKE_LOG_DEVICE
 // This will be defined when building for the host.
+#include "fake_log_device.h"
 #define log_open(pathname, flags) fakeLogOpen(pathname, flags)
 #define log_writev(filedes, vector, count) fakeLogWritev(filedes, vector, count)
 #define log_close(filedes) fakeLogClose(filedes)
@@ -49,6 +55,8 @@ static int (*write_to_log)(log_id_t, struct iovec *vec, size_t nr) = __write_to_
 #ifdef HAVE_PTHREADS
 static pthread_mutex_t log_init_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
+
+#define UNUSED  __attribute__((__unused__))
 
 static int log_fds[(int)LOG_ID_MAX] = { -1, -1, -1, -1 };
 
@@ -72,7 +80,8 @@ int __android_log_dev_available(void)
     return (g_log_status == kLogAvailable);
 }
 
-static int __write_to_log_null(log_id_t log_fd, struct iovec *vec, size_t nr)
+static int __write_to_log_null(log_id_t log_fd UNUSED, struct iovec *vec UNUSED,
+        size_t nr UNUSED)
 {
     return -1;
 }
@@ -236,7 +245,7 @@ int __android_log_buf_print(int bufID, int prio, const char *tag, const char *fm
 }
 
 void __android_log_assert(const char *cond, const char *tag,
-			  const char *fmt, ...)
+                          const char *fmt, ...)
 {
     char buf[LOG_BUF_SIZE];
 

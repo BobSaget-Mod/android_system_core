@@ -23,19 +23,6 @@ void crash1(void);
 void crashnostack(void);
 static int do_action(const char* arg);
 
-static void debuggerd_connect()
-{
-    char tmp[1];
-    int s;
-    sprintf(tmp, "%d", gettid());
-    s = socket_local_client("android:debuggerd",
-            ANDROID_SOCKET_NAMESPACE_ABSTRACT, SOCK_STREAM);
-    if(s >= 0) {
-        read(s, tmp, 1);
-        close(s);
-    }
-}
-
 static void maybeabort() {
     if(time(0) != 42) {
         abort();
@@ -70,13 +57,13 @@ static void test_call1()
 
 static void *noisy(void *x)
 {
-    char c = (unsigned) x;
+    char c = (uintptr_t) x;
     for(;;) {
         usleep(250*1000);
         write(2, &c, 1);
         if(c == 'C') *((unsigned*) 0) = 42;
     }
-    return 0;
+    return NULL;
 }
 
 static int ctest()
@@ -94,7 +81,7 @@ static int ctest()
 
 static void* thread_callback(void* raw_arg)
 {
-    return (void*) do_action((const char*) raw_arg);
+    return (void*) (uintptr_t) do_action((const char*) raw_arg);
 }
 
 static int do_action_on_thread(const char* arg)
@@ -103,7 +90,7 @@ static int do_action_on_thread(const char* arg)
     pthread_create(&t, NULL, thread_callback, (void*) arg);
     void* result = NULL;
     pthread_join(t, &result);
-    return (int) result;
+    return (int) (uintptr_t) result;
 }
 
 __attribute__((noinline)) static int crash3(int a) {

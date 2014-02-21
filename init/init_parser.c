@@ -60,7 +60,7 @@ static void parse_line_action(struct parse_state *state, int nargs, char **args)
 #define KEYWORD(symbol, flags, nargs, func) \
     [ K_##symbol ] = { #symbol, func, nargs + 1, flags, },
 
-struct {
+static struct {
     const char *name;
     int (*func)(int nargs, char **args);
     unsigned char nargs;
@@ -76,7 +76,7 @@ struct {
 #define kw_func(kw) (keyword_info[kw].func)
 #define kw_nargs(kw) (keyword_info[kw].nargs)
 
-int lookup_keyword(const char *s)
+static int lookup_keyword(const char *s)
 {
     switch (*s++) {
     case 'c':
@@ -135,6 +135,7 @@ int lookup_keyword(const char *s)
     case 'r':
         if (!strcmp(s, "estart")) return K_restart;
         if (!strcmp(s, "estorecon")) return K_restorecon;
+        if (!strcmp(s, "estorecon_recursive")) return K_restorecon_recursive;
         if (!strcmp(s, "mdir")) return K_rmdir;
         if (!strcmp(s, "m")) return K_rm;
         break;
@@ -169,7 +170,7 @@ int lookup_keyword(const char *s)
     return K_UNKNOWN;
 }
 
-void parse_line_no_op(struct parse_state *state, int nargs, char **args)
+static void parse_line_no_op(struct parse_state *state, int nargs, char **args)
 {
 }
 
@@ -292,7 +293,7 @@ err:
     return -1;
 }
 
-void parse_import(struct parse_state *state, int nargs, char **args)
+static void parse_import(struct parse_state *state, int nargs, char **args)
 {
     struct listnode *import_list = state->priv;
     struct import *import;
@@ -317,7 +318,7 @@ void parse_import(struct parse_state *state, int nargs, char **args)
     INFO("found import '%s', adding to import list", import->filename);
 }
 
-void parse_new_section(struct parse_state *state, int kw,
+static void parse_new_section(struct parse_state *state, int kw,
                        int nargs, char **args)
 {
     printf("[ %s %s ]\n", args[0],
@@ -552,12 +553,14 @@ void queue_all_property_triggers()
                 if (length > PROP_NAME_MAX) {
                     ERROR("property name too long in trigger %s", act->name);
                 } else {
+                    int ret;
                     memcpy(prop_name, name, length);
                     prop_name[length] = 0;
 
                     /* does the property exist, and match the trigger value? */
-                    property_get(prop_name, value);
-                    if (!strcmp(equals + 1, value) ||!strcmp(equals + 1, "*")) {
+                    ret = property_get(prop_name, value);
+                    if (ret > 0 && (!strcmp(equals + 1, value) ||
+                                    !strcmp(equals + 1, "*"))) {
                         action_add_queue_tail(act);
                     }
                 }
@@ -771,7 +774,7 @@ static void parse_line_service(struct parse_state *state, int nargs, char **args
         svc->envvars = ei;
         break;
     }
-    case K_socket: {/* name type perm [ uid gid ] */
+    case K_socket: {/* name type perm [ uid gid context ] */
         struct socketinfo *si;
         if (nargs < 4) {
             parse_error(state, "socket option requires name, type, perm arguments\n");
@@ -794,6 +797,8 @@ static void parse_line_service(struct parse_state *state, int nargs, char **args
             si->uid = decode_uid(args[4]);
         if (nargs > 5)
             si->gid = decode_uid(args[5]);
+        if (nargs > 6)
+            si->socketcon = args[6];
         si->next = svc->sockets;
         svc->sockets = si;
         break;

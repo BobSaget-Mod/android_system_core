@@ -200,7 +200,7 @@ static bool str_icase_equals(void *keyA, void *keyB) {
 }
 
 static int int_hash(void *key) {
-    return (int) key;
+    return (int) (uintptr_t) key;
 }
 
 static bool int_equals(void *keyA, void *keyB) {
@@ -232,7 +232,7 @@ struct fuse_handler {
      * buffer at the same time.  This allows us to share the underlying storage. */
     union {
         __u8 request_buffer[MAX_REQUEST_SIZE];
-        __u8 read_buffer[MAX_READ];
+        __u8 read_buffer[MAX_READ + PAGESIZE];
     };
 };
 
@@ -487,7 +487,7 @@ static void derive_permissions_locked(struct fuse* fuse, struct node *parent,
         break;
     case PERM_ANDROID_DATA:
     case PERM_ANDROID_OBB:
-        appid = (appid_t) hashmapGet(fuse->package_to_appid, node->name);
+        appid = (appid_t) (uintptr_t) hashmapGet(fuse->package_to_appid, node->name);
         if (appid != 0) {
             node->uid = multiuser_get_uid(parent->userid, appid);
         }
@@ -511,7 +511,7 @@ static bool get_caller_has_rw_locked(struct fuse* fuse, const struct fuse_in_hea
     }
 
     appid_t appid = multiuser_get_app_id(hdr->uid);
-    return hashmapContainsKey(fuse->appid_with_rw, (void*) appid);
+    return hashmapContainsKey(fuse->appid_with_rw, (void*) (uintptr_t) appid);
 }
 
 /* Kernel has already enforced everything we returned through
@@ -1218,6 +1218,7 @@ static int handle_read(struct fuse* fuse, struct fuse_handler* handler,
     __u32 size = req->size;
     __u64 offset = req->offset;
     int res;
+    __u8 *read_buffer = (__u8 *) ((uintptr_t)(handler->read_buffer + PAGESIZE) & ~((uintptr_t)PAGESIZE-1));
 
     /* Don't access any other fields of hdr or req beyond this point, the read buffer
      * overlaps the request buffer and will clobber data in the request.  This
@@ -1225,14 +1226,14 @@ static int handle_read(struct fuse* fuse, struct fuse_handler* handler,
 
     TRACE("[%d] READ %p(%d) %u@%llu\n", handler->token,
             h, h->fd, size, offset);
-    if (size > sizeof(handler->read_buffer)) {
+    if (size > MAX_READ) {
         return -EINVAL;
     }
-    res = pread64(h->fd, handler->read_buffer, size, offset);
+    res = pread64(h->fd, read_buffer, size, offset);
     if (res < 0) {
         return -errno;
     }
-    fuse_reply(fuse, unique, handler->read_buffer, res);
+    fuse_reply(fuse, unique, read_buffer, res);
     return NO_STATUS;
 }
 
@@ -1243,6 +1244,12 @@ static int handle_write(struct fuse* fuse, struct fuse_handler* handler,
     struct fuse_write_out out;
     struct handle *h = id_to_ptr(req->fh);
     int res;
+    __u8 aligned_buffer[req->size] __attribute__((__aligned__(PAGESIZE)));
+    
+    if (req->flags & O_DIRECT) {
+        memcpy(aligned_buffer, buffer, req->size);
+        buffer = (const __u8*) aligned_buffer;
+    }
 
     TRACE("[%d] WRITE %p(%d) %u@%llu\n", handler->token,
             h, h->fd, req->size, req->offset);
@@ -1496,7 +1503,8 @@ static int handle_fuse_request(struct fuse *fuse, struct fuse_handler* handler,
         return handle_release(fuse, handler, hdr, req);
     }
 
-    case FUSE_FSYNC: {
+    case FUSE_FSYNC:
+    case FUSE_FSYNCDIR: {
         const struct fuse_fsync_in *req = data;
         return handle_fsync(fuse, handler, hdr, req);
     }
@@ -1524,7 +1532,6 @@ static int handle_fuse_request(struct fuse *fuse, struct fuse_handler* handler,
         return handle_releasedir(fuse, handler, hdr, req);
     }
 
-//    case FUSE_FSYNCDIR:
     case FUSE_INIT: { /* init_in -> init_out */
         const struct fuse_init_in *req = data;
         return handle_init(fuse, handler, hdr, req);
@@ -1621,12 +1628,12 @@ static int read_package_list(struct fuse *fuse) {
 
         if (sscanf(buf, "%s %d %*d %*s %*s %s", package_name, &appid, gids) == 3) {
             char* package_name_dup = strdup(package_name);
-            hashmapPut(fuse->package_to_appid, package_name_dup, (void*) appid);
+            hashmapPut(fuse->package_to_appid, package_name_dup, (void*) (uintptr_t) appid);
 
             char* token = strtok(gids, ",");
             while (token != NULL) {
                 if (strtoul(token, NULL, 10) == fuse->write_gid) {
-                    hashmapPut(fuse->appid_with_rw, (void*) appid, (void*) 1);
+                    hashmapPut(fuse->appid_with_rw, (void*) (uintptr_t) appid, (void*) (uintptr_t) 1);
                     break;
                 }
                 token = strtok(NULL, ",");

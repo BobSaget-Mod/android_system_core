@@ -34,7 +34,7 @@ endif
 
 ifeq ($(HOST_OS),windows)
   USB_SRCS := usb_windows.c
-  EXTRA_SRCS := get_my_path_windows.c ../libcutils/list.c
+  EXTRA_SRCS := get_my_path_windows.c
   EXTRA_STATIC_LIBS := AdbWinApi
   ifneq ($(strip $(USE_CYGWIN)),)
     # Pure cygwin case
@@ -114,8 +114,7 @@ LOCAL_SRC_FILES := \
 	jdwp_service.c \
 	framebuffer_service.c \
 	remount_service.c \
-	usb_linux_client.c \
-	log_service.c
+	usb_linux_client.c
 
 LOCAL_CFLAGS := -O2 -g -DADB_HOST=0 -Wall -Wno-unused-parameter
 LOCAL_CFLAGS += -D_XOPEN_SOURCE -D_GNU_SOURCE
@@ -130,7 +129,7 @@ LOCAL_FORCE_STATIC_EXECUTABLE := true
 LOCAL_MODULE_PATH := $(TARGET_ROOT_OUT_SBIN)
 LOCAL_UNSTRIPPED_PATH := $(TARGET_ROOT_OUT_SBIN_UNSTRIPPED)
 
-LOCAL_STATIC_LIBRARIES := liblog libcutils libc libmincrypt
+LOCAL_STATIC_LIBRARIES := liblog libcutils libc libmincrypt libselinux
 include $(BUILD_EXECUTABLE)
 
 

@@ -12,7 +12,6 @@ TOOLS := \
 	rmmod \
 	lsmod \
 	ifconfig \
-	setconsole \
 	rm \
 	mkdir \
 	rmdir \
@@ -88,6 +87,8 @@ LOCAL_SRC_FILES := \
 	grep/grep.c grep/fastgrep.c grep/file.c grep/queue.c grep/util.c
 
 LOCAL_C_INCLUDES := bionic/libc/bionic
+
+LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \

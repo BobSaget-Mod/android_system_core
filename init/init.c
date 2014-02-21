@@ -221,6 +221,9 @@ void service_start(struct service *svc, const char *dynamic_args)
             }
 
             rc = security_compute_create(mycon, fcon, string_to_security_class("process"), &scon);
+            if (rc == 0 && !strcmp(scon, mycon)) {
+                ERROR("Warning!  Service %s needs a SELinux domain defined; please fix!\n", svc->name);
+            }
             freecon(mycon);
             freecon(fcon);
             if (rc < 0) {
@@ -250,14 +253,12 @@ void service_start(struct service *svc, const char *dynamic_args)
         for (ei = svc->envvars; ei; ei = ei->next)
             add_environment(ei->name, ei->value);
 
-        setsockcreatecon(scon);
-
         for (si = svc->sockets; si; si = si->next) {
             int socket_type = (
                     !strcmp(si->type, "stream") ? SOCK_STREAM :
                         (!strcmp(si->type, "dgram") ? SOCK_DGRAM : SOCK_SEQPACKET));
             int s = create_socket(si->name, socket_type,
-                                  si->perm, si->uid, si->gid);
+                                  si->perm, si->uid, si->gid, si->socketcon ?: scon);
             if (s >= 0) {
                 publish_socket(si->name, s);
             }
@@ -265,7 +266,6 @@ void service_start(struct service *svc, const char *dynamic_args)
 
         freecon(scon);
         scon = NULL;
-        setsockcreatecon(NULL);
 
         if (svc->ioprio_class != IoSchedClass_NONE) {
             if (android_set_ioprio(getpid(), svc->ioprio_class, svc->ioprio_pri)) {
@@ -623,7 +623,7 @@ static int mix_hwrng_into_linux_rng_action(int nargs, char **args)
         total_bytes_written += chunk_size;
     }
 
-    INFO("Mixed %d bytes from /dev/hw_random into /dev/urandom",
+    INFO("Mixed %zu bytes from /dev/hw_random into /dev/urandom",
                 total_bytes_written);
     result = 0;
 
@@ -657,29 +657,28 @@ static int console_init_action(int nargs, char **args)
         have_console = 1;
     close(fd);
 
-    if( load_565rle_image(INIT_IMAGE_FILE) ) {
-        fd = open("/dev/tty0", O_WRONLY);
-        if (fd >= 0) {
-            const char *msg;
-                msg = "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"  // console is 40 cols x 30 lines
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "\n"
-            "             A N D R O I D ";
-            write(fd, msg, strlen(msg));
-            close(fd);
-        }
+    fd = open("/dev/tty0", O_WRONLY);
+    if (fd >= 0) {
+        const char *msg;
+            msg = "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"  // console is 40 cols x 30 lines
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "\n"
+        "             A N D R O I D ";
+        write(fd, msg, strlen(msg));
+        close(fd);
     }
+
     return 0;
 }
 
@@ -869,6 +868,7 @@ struct selabel_handle* selinux_android_prop_context_handle(void)
 void selinux_init_all_handles(void)
 {
     sehandle = selinux_android_file_context_handle();
+    selinux_android_set_sehandle(sehandle);
     sehandle_prop = selinux_android_prop_context_handle();
 }
 
@@ -934,9 +934,30 @@ int selinux_reload_policy(void)
     return 0;
 }
 
-int audit_callback(void *data, security_class_t cls, char *buf, size_t len)
+static int audit_callback(void *data, security_class_t cls __attribute__((unused)), char *buf, size_t len)
 {
     snprintf(buf, len, "property=%s", !data ? "NULL" : (char *)data);
+    return 0;
+}
+
+static int log_callback(int type, const char *fmt, ...)
+{
+    int level;
+    va_list ap;
+    switch (type) {
+    case SELINUX_WARNING:
+        level = KLOG_WARNING_LEVEL;
+        break;
+    case SELINUX_INFO:
+        level = KLOG_INFO_LEVEL;
+        break;
+    default:
+        level = KLOG_ERROR_LEVEL;
+        break;
+    }
+    va_start(ap, fmt);
+    klog_vwrite(level, fmt, ap);
+    va_end(ap);
     return 0;
 }
 
@@ -1013,7 +1034,7 @@ int main(int argc, char **argv)
     process_kernel_cmdline();
 
     union selinux_callback cb;
-    cb.func_log = klog_write;
+    cb.func_log = log_callback;
     selinux_set_callback(SELINUX_CB_LOG, cb);
 
     cb.func_audit = audit_callback;
@@ -1133,7 +1154,7 @@ int main(int argc, char **argv)
             continue;
 
         for (i = 0; i < fd_count; i++) {
-            if (ufds[i].revents == POLLIN) {
+            if (ufds[i].revents & POLLIN) {
                 if (ufds[i].fd == get_property_set_fd())
                     handle_property_set_fd();
                 else if (ufds[i].fd == get_keychord_fd())

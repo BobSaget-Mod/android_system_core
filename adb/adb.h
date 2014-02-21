@@ -122,6 +122,12 @@ struct asocket {
         */
     void (*ready)(asocket *s);
 
+        /* shutdown is called by the peer before it goes away.
+        ** the socket should not do any further calls on its peer.
+        ** Always followed by a call to close. Optional, i.e. can be NULL.
+        */
+    void (*shutdown)(asocket *s);
+
         /* close is called by the peer when it has gone away.
         ** we are not allowed to make any further calls on the
         ** peer once our close method is called.
@@ -233,7 +239,7 @@ struct alistener
 
 void print_packet(const char *label, apacket *p);
 
-asocket *find_local_socket(unsigned id);
+asocket *find_local_socket(unsigned local_id, unsigned remote_id);
 void install_local_socket(asocket *s);
 void remove_socket(asocket *s);
 void close_all_sockets(atransport *t);
@@ -324,9 +330,7 @@ typedef enum {
 } BackupOperation;
 int backup_service(BackupOperation operation, char* args);
 void framebuffer_service(int fd, void *cookie);
-void log_service(int fd, void *cookie);
 void remount_service(int fd, void *cookie);
-char * get_log_file_path(const char * log_name);
 #endif
 
 /* packet allocator */

@@ -86,7 +86,7 @@ void restart_tcp_service(int fd, void *cookie)
 {
     char buf[100];
     char value[PROPERTY_VALUE_MAX];
-    int port = (int)cookie;
+    int port = (int) (uintptr_t) cookie;
 
     if (port <= 0) {
         snprintf(buf, sizeof(buf), "invalid port\n");
@@ -269,7 +269,7 @@ static int create_subprocess(const char *cmd, const char *arg0, const char *arg1
 #if !ADB_HOST
 static void subproc_waiter_service(int fd, void *cookie)
 {
-    pid_t pid = (pid_t)cookie;
+    pid_t pid = (pid_t) (uintptr_t) cookie;
 
     D("entered. fd=%d of pid=%d\n", fd, pid);
     for (;;) {
@@ -314,7 +314,7 @@ static int create_subproc_thread(const char *name)
     sti = malloc(sizeof(stinfo));
     if(sti == 0) fatal("cannot allocate stinfo");
     sti->func = subproc_waiter_service;
-    sti->cookie = (void*)pid;
+    sti->cookie = (void*) (uintptr_t) pid;
     sti->fd = ret_fd;
 
     if(adb_thread_create( &t, service_bootstrap_func, sti)){
@@ -368,8 +368,6 @@ int service_to_fd(const char *name)
         ret = create_service_thread(framebuffer_service, 0);
     } else if (!strncmp(name, "jdwp:", 5)) {
         ret = create_jdwp_connection_fd(atoi(name+5));
-    } else if (!strncmp(name, "log:", 4)) {
-        ret = create_service_thread(log_service, get_log_file_path(name + 4));
     } else if(!HOST && !strncmp(name, "shell:", 6)) {
         if(name[6]) {
             ret = create_subproc_thread(name + 6);
@@ -397,7 +395,7 @@ int service_to_fd(const char *name)
         if (sscanf(name + 6, "%d", &port) == 0) {
             port = 0;
         }
-        ret = create_service_thread(restart_tcp_service, (void *)port);
+        ret = create_service_thread(restart_tcp_service, (void *) (uintptr_t) port);
     } else if(!strncmp(name, "usb:", 4)) {
         ret = create_service_thread(restart_usb_service, NULL);
 #endif

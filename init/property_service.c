@@ -81,6 +81,7 @@ struct {
     { "sys.powerctl",     AID_SHELL,    0 },
     { "service.",         AID_SYSTEM,   0 },
     { "wlan.",            AID_SYSTEM,   0 },
+    { "gps.",             AID_GPS,      0 },
     { "bluetooth.",       AID_BLUETOOTH,   0 },
     { "dhcp.",            AID_SYSTEM,   0 },
     { "dhcp.",            AID_DHCP,     0 },
@@ -92,6 +93,7 @@ struct {
     { "persist.sys.",     AID_SYSTEM,   0 },
     { "persist.service.", AID_SYSTEM,   0 },
     { "persist.security.", AID_SYSTEM,   0 },
+    { "persist.gps.",      AID_GPS,      0 },
     { "persist.service.bdroid.", AID_BLUETOOTH,   0 },
     { "selinux."         , AID_SYSTEM,   0 },
     { NULL, 0, 0 }
@@ -166,7 +168,7 @@ static int check_mac_perms(const char *name, char *sctx)
     if (selabel_lookup(sehandle_prop, &tctx, name, 1) != 0)
         goto err;
 
-    if (selinux_check_access(sctx, tctx, class, perm, name) == 0)
+    if (selinux_check_access(sctx, tctx, class, perm, (void*) name) == 0)
         result = 1;
 
     freecon(tctx);
@@ -380,7 +382,7 @@ void handle_property_set_fd()
 
     r = TEMP_FAILURE_RETRY(recv(s, &msg, sizeof(msg), 0));
     if(r != sizeof(prop_msg)) {
-        ERROR("sys_prop: mis-match msg size received: %d expected: %d errno: %d\n",
+        ERROR("sys_prop: mis-match msg size received: %d expected: %zu errno: %d\n",
               r, sizeof(prop_msg), errno);
         close(s);
         return;
@@ -437,10 +439,13 @@ void get_property_workspace(int *fd, int *sz)
     *sz = pa_workspace.size;
 }
 
-static void load_properties(char *data)
+static void load_properties(char *data, char *prefix)
 {
     char *key, *value, *eol, *sol, *tmp;
+    size_t plen;
 
+    if (prefix)
+        plen = strlen(prefix);
     sol = data;
     while((eol = strchr(sol, '\n'))) {
         key = sol;
@@ -456,6 +461,9 @@ static void load_properties(char *data)
         tmp = value - 2;
         while((tmp > key) && isspace(*tmp)) *tmp-- = 0;
 
+        if (prefix && strncmp(key, prefix, plen))
+            continue;
+
         while(isspace(*value)) value++;
         tmp = eol - 2;
         while((tmp > value) && isspace(*tmp)) *tmp-- = 0;
@@ -464,7 +472,7 @@ static void load_properties(char *data)
     }
 }
 
-static void load_properties_from_file(const char *fn)
+static void load_properties_from_file(const char *fn, char *prefix)
 {
     char *data;
     unsigned sz;
@@ -472,7 +480,7 @@ static void load_properties_from_file(const char *fn)
     data = read_file(fn, &sz);
 
     if(data != 0) {
-        load_properties(data);
+        load_properties(data, prefix);
         free(data);
     }
 }
@@ -514,7 +522,7 @@ static void load_persistent_properties()
                     || (sb.st_uid != 0)
                     || (sb.st_gid != 0)
                     || (sb.st_nlink != 1)) {
-                ERROR("skipping insecure property file %s (uid=%lu gid=%lu nlink=%d mode=%o)\n",
+                ERROR("skipping insecure property file %s (uid=%u gid=%u nlink=%d mode=%o)\n",
                       entry->d_name, sb.st_uid, sb.st_gid, sb.st_nlink, sb.st_mode);
                 close(fd);
                 continue;
@@ -545,7 +553,7 @@ void property_init(void)
 
 void property_load_boot_defaults(void)
 {
-    load_properties_from_file(PROP_PATH_RAMDISK_DEFAULT);
+    load_properties_from_file(PROP_PATH_RAMDISK_DEFAULT, NULL);
 }
 
 int properties_inited(void)
@@ -560,7 +568,7 @@ static void load_override_properties() {
 
     ret = property_get("ro.debuggable", debuggable);
     if (ret && (strcmp(debuggable, "1") == 0)) {
-        load_properties_from_file(PROP_PATH_LOCAL_OVERRIDE);
+        load_properties_from_file(PROP_PATH_LOCAL_OVERRIDE, NULL);
     }
 #endif /* ALLOW_LOCAL_PROP_OVERRIDE */
 }
@@ -582,13 +590,14 @@ void start_property_service(void)
 {
     int fd;
 
-    load_properties_from_file(PROP_PATH_SYSTEM_BUILD);
-    load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT);
+    load_properties_from_file(PROP_PATH_SYSTEM_BUILD, NULL);
+    load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT, NULL);
+    load_properties_from_file(PROP_PATH_FACTORY, "ro.");
     load_override_properties();
     /* Read persistent properties after all default values have been loaded. */
     load_persistent_properties();
 
-    fd = create_socket(PROP_SERVICE_NAME, SOCK_STREAM, 0666, 0, 0);
+    fd = create_socket(PROP_SERVICE_NAME, SOCK_STREAM, 0666, 0, 0, NULL);
     if(fd < 0) return;
     fcntl(fd, F_SETFD, FD_CLOEXEC);
     fcntl(fd, F_SETFL, O_NONBLOCK);

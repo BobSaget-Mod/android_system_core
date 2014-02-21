@@ -30,6 +30,8 @@ x86_src_files := \
 	arch-x86/backtrace-x86.c \
 	arch-x86/ptrace-x86.c
 
+ifneq ($(TARGET_IS_64_BIT),true)
+
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(generic_src_files)
@@ -71,9 +73,9 @@ LOCAL_MODULE := libcorkscrew_test
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
 
+endif # TARGET_IS_64_BIT == false
 
-# TODO: reenable darwin-x86
-# ifeq ($(HOST_ARCH),x86)
+
 ifeq ($(HOST_OS)-$(HOST_ARCH),linux-x86)
 
 # Build libcorkscrew.
@@ -86,7 +88,7 @@ ifeq ($(HOST_OS),linux)
   LOCAL_SHARED_LIBRARIES += libgccdemangle # TODO: is this even needed on Linux?
   LOCAL_LDLIBS += -lrt
 endif
-LOCAL_CFLAGS += -std=gnu99 -Werror
+LOCAL_CFLAGS += -std=gnu99 -Werror -Wno-unused-parameter
 LOCAL_MODULE := libcorkscrew
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_HOST_SHARED_LIBRARY)
@@ -100,4 +102,4 @@ LOCAL_MODULE := libcorkscrew_test
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_HOST_EXECUTABLE)
 
-endif # HOST_ARCH == x86
+endif # $(HOST_OS)-$(HOST_ARCH) == linux-x86
